@@ -58,9 +58,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if username:
         users[username] = user.id
 
+    keyboard = [
+        [
+            InlineKeyboardButton("🛒 Buyer", callback_data="role_buyer"),
+            InlineKeyboardButton("📦 Seller", callback_data="role_seller")
+        ]
+    ]
+
     await update.message.reply_text(
-        "Welcome to Escrow Bot\n\nUse /create to start a deal"
+        "Welcome to Escrow Bot\n\nSelect your role:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+async def role_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    role = query.data.split("_")[1]
+
+    if role == "buyer":
+        await query.edit_message_text(
+            "You selected BUYER\n\nCreate deal using:\n/create"
+        )
+
+    else:
+        await query.edit_message_text(
+            "You selected SELLER\n\nWait for buyer to create deal."
+        )
 
 
 async def create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,6 +113,12 @@ async def amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deal_id = generate_deal_id()
 
     buyer = update.message.from_user.username
+    if not buyer:
+        await update.message.reply_text(
+            "Please set a Telegram username in your profile before creating a deal."
+        )
+        return ConversationHandler.END
+
     seller = context.user_data["seller"]
     item = context.user_data["item"]
     amount = update.message.text
@@ -134,8 +165,11 @@ Waiting for seller approval
 
     keyboard = [
         [
-            InlineKeyboardButton("Accept",callback_data=f"accept_{deal_id}"),
-            InlineKeyboardButton("Reject",callback_data=f"reject_{deal_id}")
+            InlineKeyboardButton("Accept", callback_data=f"accept_{deal_id}"),
+            InlineKeyboardButton("Reject", callback_data=f"reject_{deal_id}")
+        ],
+        [
+            InlineKeyboardButton("Cancel Deal", callback_data=f"cancel_{deal_id}")
         ]
     ]
 
@@ -153,6 +187,22 @@ Item: {item}
 Amount: {amount}
 """,
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    # Send group invite to buyer and seller
+    invite_link = "https://t.me/safe_escrow_deals/1"
+
+    buyer_id = users.get(buyer)
+
+    if buyer_id:
+        await context.bot.send_message(
+            chat_id=buyer_id,
+            text=f"Join escrow monitoring group:\n{invite_link}"
+        )
+
+    if seller_id:
+        await context.bot.send_message(
+            chat_id=seller_id,
+            text=f"Join escrow monitoring group:\n{invite_link}"
         )
 
     await context.bot.send_message(
@@ -172,7 +222,7 @@ Amount: {amount}
     Status:
     ✔ Deal Created
     ⬜ Seller Accepted
-    ⬜ Payment Sent
+    ⬜Payment Sent
     ⬜ Item Delivered
     ⬜ Completed
     """
@@ -193,6 +243,21 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     action, deal_id = query.data.split("_")
+    if action == "cancel":
+        cursor.execute(
+            "UPDATE deals SET status=? WHERE deal_id=?",
+            ("cancelled", deal_id)
+        )
+        conn.commit()
+
+        await query.edit_message_text("Deal Cancelled")
+
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"Deal {deal_id} cancelled."
+        )
+
+        return
 
     cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
     deal = cursor.fetchone()
@@ -262,6 +327,49 @@ Buyer must now send payment.
             )
 
     await update_tracker(context, deal_id)
+
+
+async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    action, deal_id = query.data.split("_")[1:]
+
+    cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
+    deal = cursor.fetchone()
+
+    if not deal:
+        return
+
+    seller_id = users.get(deal[2])
+
+    if action == "paid":
+
+        cursor.execute(
+            "UPDATE deals SET status=? WHERE deal_id=?",
+            ("paid", deal_id)
+        )
+        conn.commit()
+
+        await query.edit_message_text("Payment Verified")
+
+        if seller_id:
+            await context.bot.send_message(
+                chat_id=seller_id,
+                text=f"""
+Payment verified for deal {deal_id}
+
+Please deliver the item.
+
+After delivery use:
+/delivered {deal_id}
+"""
+            )
+
+    else:
+
+        await query.edit_message_text("Payment Rejected")
 
 async def update_tracker(context, deal_id):
 
@@ -348,6 +456,15 @@ Status:
     )
 
 async def payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    caption = update.message.caption
+
+    if not caption:
+        await update.message.reply_text("Please include Deal ID in caption.")
+        return
+
+    deal_id = caption.strip()
+
     await context.bot.send_message(
         chat_id=ESCROW_GROUP_ID,
         text="Payment screenshot received. Waiting for admin verification."
@@ -357,9 +474,17 @@ async def payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Payment proof received. Admin will verify."
     )
 
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Payment Received", callback_data=f"admin_paid_{deal_id}"),
+            InlineKeyboardButton("❌ Payment Not Received", callback_data=f"admin_reject_{deal_id}")
+        ]
+    ]
+
     await context.bot.send_message(
         chat_id=ADMIN_ID,
-        text="Buyer uploaded payment proof"
+        text=f"Payment proof received\nDeal ID: {deal_id}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -617,9 +742,11 @@ conv_handler = ConversationHandler(
 )
 
 app.add_handler(CommandHandler("start",start))
+app.add_handler(CallbackQueryHandler(role_handler, pattern="role_"))
 app.add_handler(CommandHandler("groupid", groupid))
 app.add_handler(conv_handler)
 app.add_handler(CallbackQueryHandler(seller_response))
+app.add_handler(CallbackQueryHandler(admin_payment, pattern="admin_"))
 app.add_handler(MessageHandler(filters.PHOTO,payment))
 app.add_handler(CommandHandler("delivered",delivered))
 app.add_handler(CommandHandler("confirm",confirm))
