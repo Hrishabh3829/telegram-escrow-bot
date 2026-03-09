@@ -260,9 +260,6 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
         deal = cursor.fetchone()
-        if query.from_user.username != deal[2]:
-            await query.answer("Only the seller can perform this action.", show_alert=True)
-            return
 
         buyer_username = deal[1]
         buyer_id = users.get(buyer_username)
@@ -287,6 +284,16 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not deal:
         return
+
+    # 🔒 SECURITY CHECK (ADD HERE)
+    if query.from_user.username != deal[2]:
+        await query.answer("Only the seller can perform this action.", show_alert=True)
+        return
+
+    buyer_username = deal[1]
+    buyer_id = users.get(buyer_username)
+
+
 
     buyer_username = deal[1]
     buyer_id = users.get(buyer_username)
@@ -367,6 +374,7 @@ async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buyer_id = users.get(deal[1])
     seller_id = users.get(deal[2])
+    item = deal[3]
 
     if action == "paid":
 
@@ -385,7 +393,7 @@ async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"""
 Admin verified payment for deal {deal_id}
 
-Please deliver the item to the buyer.
+Please deliver the {item} to the buyer.
 """
             )
 
@@ -398,7 +406,7 @@ Please deliver the item to the buyer.
 
 Deal ID: {deal_id}
 
-Seller will now deliver the item.
+Seller will now deliver the {item}.
 You will be asked to confirm after delivery.
 """
             )
@@ -411,8 +419,13 @@ Payment Verified by Admin
 
 Deal ID: {deal_id}
 
-Seller should now deliver the item.
+Seller should now deliver the {item}.
 """
+        )
+
+        # start delayed confirmation timer (3 minutes)
+        context.application.create_task(
+            delayed_buyer_confirmation(context, buyer_id, deal_id)
         )
 
     else:
@@ -427,6 +440,48 @@ Seller should now deliver the item.
 
     await update_tracker(context, deal_id)
 
+
+async def delayed_buyer_confirmation(context, buyer_id, deal_id):
+
+    import asyncio
+    await asyncio.sleep(180)   # 3 minutes
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Yes I received", callback_data=f"buyer_yes_{deal_id}"),
+            InlineKeyboardButton("❌ No I did not receive", callback_data=f"buyer_no_{deal_id}")
+        ]
+    ]
+
+    await context.bot.send_message(
+        chat_id=buyer_id,
+        text="Did you receive the item from the seller?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def seller_delivery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split("_")
+    action = parts[1]
+    deal_id = parts[2]
+
+    if action == "delivered":
+
+        await query.edit_message_text("Seller confirmed item delivered.")
+
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"Seller confirmed delivery for deal {deal_id}."
+        )
+
+    else:
+
+        await query.edit_message_text("Seller said item not delivered yet.")
+
+
 async def buyer_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
@@ -440,11 +495,12 @@ async def buyer_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not deal:
         return
 
-    buyer = deal[1]
-
-    if query.from_user.username != buyer:
+    # 🔒 Security check – only buyer can press the button
+    if query.from_user.username != deal[1]:
         await query.answer("Only buyer can confirm.", show_alert=True)
         return
+
+    buyer_id = users.get(deal[1])
 
     if action == "yes":
 
@@ -456,6 +512,7 @@ async def buyer_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await query.edit_message_text("Buyer confirmed item received.")
 
+        # Notify group
         await context.bot.send_message(
             chat_id=ESCROW_GROUP_ID,
             text=f"""
@@ -477,6 +534,7 @@ Buyer confirmed item received.
 
         await query.edit_message_text("Buyer reported item NOT received.")
 
+        # Notify group
         await context.bot.send_message(
             chat_id=ESCROW_GROUP_ID,
             text=f"""
@@ -489,6 +547,7 @@ Admin review required.
 """
         )
 
+    # Update tracker message
     await update_tracker(context, deal_id)
 
 
@@ -678,128 +737,128 @@ async def groupid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     await update.message.reply_text(f"Group ID: {chat_id}")
 
-async def delivered(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not context.args:
-        await update.message.reply_text("Usage: /delivered DEAL_ID")
-        return
-
-    deal_id = context.args[0]
-
-    cursor.execute("SELECT * FROM deals WHERE deal_id=?",(deal_id,))
-    deal = cursor.fetchone()
-
-    if not deal:
-        return
-
-    buyer_id = users.get(deal[1])
-
-    cursor.execute(
-        "UPDATE deals SET status=? WHERE deal_id=?",
-        ("delivered",deal_id)
-    )
-    conn.commit()
-    await context.bot.send_message(
-        chat_id=ESCROW_GROUP_ID,
-        text=f"""
-    Seller marked item delivered
-
-    Deal ID: {deal_id}
-
-    Waiting for buyer confirmation.
-    Buyer should run:
-    /confirm {deal_id}
-    """
-    )
-
-    if buyer_id:
-        await context.bot.send_message(
-            chat_id=buyer_id,
-            text=f"""
-Seller marked item delivered
-
-Deal ID: {deal_id}
-
-Use /confirm {deal_id}
-"""
-        )
-    await update_tracker(context, deal_id)
-
-
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not context.args:
-        await update.message.reply_text("Usage: /confirm DEAL_ID")
-        return
-
-    deal_id = context.args[0]
-
-    cursor.execute(
-        "UPDATE deals SET status=? WHERE deal_id=?",
-        ("buyer confirmed", deal_id)
-    )
-
-    conn.commit()
-
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=f"""
-Buyer confirmed delivery
-
-Deal ID: {deal_id}
-
-Admin can release payment:
-/release {deal_id}
-"""
-    )
-
-    await update_tracker(context, deal_id)
+# async def delivered(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#
+#     if not context.args:
+#         await update.message.reply_text("Usage: /delivered DEAL_ID")
+#         return
+#
+#     deal_id = context.args[0]
+#
+#     cursor.execute("SELECT * FROM deals WHERE deal_id=?",(deal_id,))
+#     deal = cursor.fetchone()
+#
+#     if not deal:
+#         return
+#
+#     buyer_id = users.get(deal[1])
+#
+#     cursor.execute(
+#         "UPDATE deals SET status=? WHERE deal_id=?",
+#         ("delivered",deal_id)
+#     )
+#     conn.commit()
+#     await context.bot.send_message(
+#         chat_id=ESCROW_GROUP_ID,
+#         text=f"""
+#     Seller marked item delivered
+#
+#     Deal ID: {deal_id}
+#
+#     Waiting for buyer confirmation.
+#     Buyer should run:
+#     /confirm {deal_id}
+#     """
+#     )
+#
+#     if buyer_id:
+#         await context.bot.send_message(
+#             chat_id=buyer_id,
+#             text=f"""
+# Seller marked item delivered
+#
+# Deal ID: {deal_id}
+#
+# Use /confirm {deal_id}
+# """
+#         )
+#     await update_tracker(context, deal_id)
 
 
-async def release(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.message.from_user.id != ADMIN_ID:
-        return
-
-    if not context.args:
-        await update.message.reply_text("Usage: /release DEAL_ID")
-        return
-
-    deal_id = context.args[0]
-
-    cursor.execute("SELECT * FROM deals WHERE deal_id=?",(deal_id,))
-    deal = cursor.fetchone()
-
-    if not deal:
-        return
-
-    seller_id = users.get(deal[2])
-
-    cursor.execute(
-        "UPDATE deals SET status=? WHERE deal_id=?",
-        ("completed",deal_id)
-    )
-    conn.commit()
-    await context.bot.send_message(
-        chat_id=ESCROW_GROUP_ID,
-        text=f"""
-    Deal Completed
-
-    Deal ID: {deal_id}
-
-    Admin released payment to seller.
-    Escrow closed successfully.
-    """
-    )
+# async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#
+#     if not context.args:
+#         await update.message.reply_text("Usage: /confirm DEAL_ID")
+#         return
+#
+#     deal_id = context.args[0]
+#
+#     cursor.execute(
+#         "UPDATE deals SET status=? WHERE deal_id=?",
+#         ("buyer confirmed", deal_id)
+#     )
+#
+#     conn.commit()
+#
+#     await context.bot.send_message(
+#         chat_id=ADMIN_ID,
+#         text=f"""
+# Buyer confirmed delivery
+#
+# Deal ID: {deal_id}
+#
+# Admin can release payment:
+# /release {deal_id}
+# """
+#     )
+#
+#     await update_tracker(context, deal_id)
 
 
-    if seller_id:
-        await context.bot.send_message(
-            chat_id=seller_id,
-            text=f"Payment released for deal {deal_id}"
-        )
-
-    await update_tracker(context, deal_id)
+# async def release(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#
+#     if update.message.from_user.id != ADMIN_ID:
+#         return
+#
+#     if not context.args:
+#         await update.message.reply_text("Usage: /release DEAL_ID")
+#         return
+#
+#     deal_id = context.args[0]
+#
+#     cursor.execute("SELECT * FROM deals WHERE deal_id=?",(deal_id,))
+#     deal = cursor.fetchone()
+#
+#     if not deal:
+#         return
+#
+#     seller_id = users.get(deal[2])
+#
+#     cursor.execute(
+#         "UPDATE deals SET status=? WHERE deal_id=?",
+#         ("completed",deal_id)
+#     )
+#     conn.commit()
+#     await context.bot.send_message(
+#         chat_id=ESCROW_GROUP_ID,
+#         text=f"""
+#     Deal Completed
+#
+#     Deal ID: {deal_id}
+#
+#     Admin released payment to seller.
+#     Escrow closed successfully.
+#     """
+#     )
+#
+#
+#     if seller_id:
+#         await context.bot.send_message(
+#             chat_id=seller_id,
+#             text=f"Payment released for deal {deal_id}"
+#         )
+#
+#     await update_tracker(context, deal_id)
 
 async def mydeals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -889,17 +948,25 @@ app.add_handler(CallbackQueryHandler(role_handler, pattern="role_"))
 app.add_handler(conv_handler)
 
 app.add_handler(CommandHandler("groupid", groupid))
+
+# CALLBACK BUTTON HANDLERS
 app.add_handler(CallbackQueryHandler(seller_response, pattern="^(accept|reject|cancel)_"))
 app.add_handler(CallbackQueryHandler(admin_payment, pattern="admin_"))
+app.add_handler(CallbackQueryHandler(seller_delivery, pattern="seller_"))
+app.add_handler(CallbackQueryHandler(buyer_confirmation, pattern="buyer_"))
+
+# MESSAGE HANDLERS
 app.add_handler(MessageHandler(filters.PHOTO, payment))
-# app.add_handler(CommandHandler("delivered", delivered))
-# app.add_handler(CommandHandler("confirm", confirm))
-# app.add_handler(CommandHandler("release", release))
+
+# COMMAND HANDLERS
 app.add_handler(CommandHandler("paid", paid))
 app.add_handler(CommandHandler("mydeals", mydeals))
 app.add_handler(CommandHandler("status", status))
 app.add_handler(CommandHandler("adminpanel", adminpanel))
-app.add_handler(CallbackQueryHandler(buyer_confirmation, pattern="buyer_"))
+
+# app.add_handler(CommandHandler("delivered", delivered))
+# app.add_handler(CommandHandler("confirm", confirm))
+# app.add_handler(CommandHandler("release", release))
 
 print("Escrow Bot Running...")
 
