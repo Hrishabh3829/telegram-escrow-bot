@@ -221,10 +221,10 @@ Amount: {amount}
 
     Status:
     ✔ Deal Created
-    ⬜ Seller Accepted
-    ⬜Payment Sent
-    ⬜ Item Delivered
-    ⬜ Completed
+    ❌ Seller Accepted
+    ❌ Payment Sent
+    ❌ Item Delivered
+    ❌ Completed
     """
     )
 
