@@ -365,6 +365,7 @@ async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not deal:
         return
 
+    buyer_id = users.get(deal[1])
     seller_id = users.get(deal[2])
 
     if action == "paid":
@@ -377,18 +378,42 @@ async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text("Payment Verified")
 
+        # notify seller
         if seller_id:
             await context.bot.send_message(
                 chat_id=seller_id,
                 text=f"""
-Payment verified for deal {deal_id}
+Admin verified payment for deal {deal_id}
 
-Please deliver the item.
-
-After delivery use:
-/delivered {deal_id}
+Please deliver the item to the buyer.
 """
             )
+
+        # notify buyer
+        if buyer_id:
+            await context.bot.send_message(
+                chat_id=buyer_id,
+                text=f"""
+✅ Payment Verified by Admin
+
+Deal ID: {deal_id}
+
+Seller will now deliver the item.
+You will be asked to confirm after delivery.
+"""
+            )
+
+        # notify group
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"""
+Payment Verified by Admin
+
+Deal ID: {deal_id}
+
+Seller should now deliver the item.
+"""
+        )
 
     else:
 
@@ -399,6 +424,70 @@ After delivery use:
             ("payment rejected", deal_id)
         )
         conn.commit()
+
+    await update_tracker(context, deal_id)
+
+async def buyer_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    action, deal_id = query.data.split("_")[1:]
+
+    cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
+    deal = cursor.fetchone()
+
+    if not deal:
+        return
+
+    buyer = deal[1]
+
+    if query.from_user.username != buyer:
+        await query.answer("Only buyer can confirm.", show_alert=True)
+        return
+
+    if action == "yes":
+
+        cursor.execute(
+            "UPDATE deals SET status=? WHERE deal_id=?",
+            ("completed", deal_id)
+        )
+        conn.commit()
+
+        await query.edit_message_text("Buyer confirmed item received.")
+
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"""
+Deal Completed
+
+Deal ID: {deal_id}
+
+Buyer confirmed item received.
+"""
+        )
+
+    else:
+
+        cursor.execute(
+            "UPDATE deals SET status=? WHERE deal_id=?",
+            ("buyer dispute", deal_id)
+        )
+        conn.commit()
+
+        await query.edit_message_text("Buyer reported item NOT received.")
+
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"""
+⚠️ Dispute Opened
+
+Deal ID: {deal_id}
+
+Buyer reported item NOT received.
+Admin review required.
+"""
+        )
 
     await update_tracker(context, deal_id)
 
@@ -803,13 +892,14 @@ app.add_handler(CommandHandler("groupid", groupid))
 app.add_handler(CallbackQueryHandler(seller_response, pattern="^(accept|reject|cancel)_"))
 app.add_handler(CallbackQueryHandler(admin_payment, pattern="admin_"))
 app.add_handler(MessageHandler(filters.PHOTO, payment))
-app.add_handler(CommandHandler("delivered", delivered))
-app.add_handler(CommandHandler("confirm", confirm))
-app.add_handler(CommandHandler("release", release))
+# app.add_handler(CommandHandler("delivered", delivered))
+# app.add_handler(CommandHandler("confirm", confirm))
+# app.add_handler(CommandHandler("release", release))
 app.add_handler(CommandHandler("paid", paid))
 app.add_handler(CommandHandler("mydeals", mydeals))
 app.add_handler(CommandHandler("status", status))
 app.add_handler(CommandHandler("adminpanel", adminpanel))
+app.add_handler(CallbackQueryHandler(buyer_confirmation, pattern="buyer_"))
 
 print("Escrow Bot Running...")
 
