@@ -46,8 +46,10 @@ SELLER, ITEM, AMOUNT = range(3)
 
 users = {}
 
+import uuid
+
 def generate_deal_id():
-    return str(random.randint(1000,9999))
+    return str(uuid.uuid4())[:8]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -242,8 +244,12 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    action, deal_id = query.data.split("_")
+    parts = query.data.split("_")
+    action = parts[0]
+    deal_id = parts[-1]
+
     if action == "cancel":
+
         cursor.execute(
             "UPDATE deals SET status=? WHERE deal_id=?",
             ("cancelled", deal_id)
@@ -252,10 +258,24 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text("Deal Cancelled")
 
+        cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
+        deal = cursor.fetchone()
+
+        buyer_username = deal[1]
+        buyer_id = users.get(buyer_username)
+
+        if buyer_id:
+            await context.bot.send_message(
+                chat_id=buyer_id,
+                text=f"Seller cancelled deal {deal_id}"
+            )
+
         await context.bot.send_message(
             chat_id=ESCROW_GROUP_ID,
             text=f"Deal {deal_id} cancelled."
         )
+
+        await update_tracker(context, deal_id)
 
         return
 
@@ -387,29 +407,28 @@ async def update_tracker(context, deal_id):
     message_id = deal[6]
 
     stages = {
-
         "pending": [
             "✔ Deal Created",
-            "✔ Seller Accepted",
-            "✔ Payment Sent",
-            "✔ Item Delivered",
-            "✔ Completed"
+            "❌ Seller Accepted",
+            "❌ Payment Sent",
+            "❌ Item Delivered",
+            "❌ Completed"
         ],
 
         "accepted": [
             "✔ Deal Created",
             "✔ Seller Accepted",
-            "✔ Payment Sent",
-            "✔ Item Delivered",
-            "✔ Completed"
+            "❌ Payment Sent",
+            "❌ Item Delivered",
+            "❌ Completed"
         ],
 
         "paid": [
             "✔ Deal Created",
             "✔ Seller Accepted",
             "✔ Payment Sent",
-            "✔ Item Delivered",
-            "✔ Completed"
+            "❌ Item Delivered",
+            "❌ Completed"
         ],
 
         "delivered": [
@@ -417,7 +436,7 @@ async def update_tracker(context, deal_id):
             "✔ Seller Accepted",
             "✔ Payment Sent",
             "✔ Item Delivered",
-            "✔ Completed"
+            "❌ Completed"
         ],
 
         "buyer confirmed": [
@@ -434,6 +453,22 @@ async def update_tracker(context, deal_id):
             "✔ Payment Sent",
             "✔ Item Delivered",
             "✔ Completed"
+        ],
+
+        "rejected": [
+            "✔ Deal Created",
+            "❌ Seller Rejected",
+            "❌ Payment Sent",
+            "❌ Item Delivered",
+            "❌ Completed"
+        ],
+
+        "cancelled": [
+            "✔ Deal Created",
+            "❌ Deal Cancelled",
+            "❌ Payment Sent",
+            "❌ Item Delivered",
+            "❌ Completed"
         ]
     }
 
