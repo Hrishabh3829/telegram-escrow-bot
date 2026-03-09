@@ -21,7 +21,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 ESCROW_GROUP_ID = -1003775971340
-ESCROW_UPI = "9555542734@ybl"
+ESCROW_UPI = os.getenv("ESCROW_UPI")
 
 # Database setup
 conn = sqlite3.connect("escrow.db", check_same_thread=False)
@@ -188,35 +188,13 @@ Amount: {amount}
 
 
 async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if action == "accept":
-        cursor.execute(
-            "UPDATE deals SET status=? WHERE deal_id=?",
-            ("accepted", deal_id)
-        )
-        conn.commit()
-
-        await query.edit_message_text("Deal Accepted")
-
-        # notify group
-        await context.bot.send_message(
-            chat_id=ESCROW_GROUP_ID,
-            text=f"""
-    Deal Accepted
-
-    Deal ID: {deal_id}
-    Buyer: @{buyer_username}
-    Seller: @{deal[2]}
-
-    Buyer must send payment.
-    """
-        )
 
     query = update.callback_query
     await query.answer()
 
-    action,deal_id = query.data.split("_")
+    action, deal_id = query.data.split("_")
 
-    cursor.execute("SELECT * FROM deals WHERE deal_id=?",(deal_id,))
+    cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
     deal = cursor.fetchone()
 
     if not deal:
@@ -229,34 +207,49 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute(
             "UPDATE deals SET status=? WHERE deal_id=?",
-            ("accepted",deal_id)
+            ("accepted", deal_id)
         )
         conn.commit()
 
         await query.edit_message_text("Deal Accepted")
 
+        # Notify buyer
         if buyer_id:
             await context.bot.send_message(
                 chat_id=buyer_id,
                 text=f"""
-            Seller accepted the deal.
+Seller accepted the deal.
 
-            Deal ID: {deal_id}
+Deal ID: {deal_id}
 
-            Send payment to escrow wallet:
+Send payment to escrow wallet:
 
-            UPI: 9555542734@ybl
-            Amount: ₹{deal[4]}
+UPI: {ESCROW_UPI}
+Amount: ₹{deal[4]}
 
-            After payment send screenshot here.
-            """
+After payment send screenshot here.
+"""
             )
+
+        # Notify group
+        await context.bot.send_message(
+            chat_id=ESCROW_GROUP_ID,
+            text=f"""
+Deal Accepted
+
+Deal ID: {deal_id}
+Buyer: @{buyer_username}
+Seller: @{deal[2]}
+
+Buyer must now send payment.
+"""
+        )
 
     else:
 
         cursor.execute(
             "UPDATE deals SET status=? WHERE deal_id=?",
-            ("rejected",deal_id)
+            ("rejected", deal_id)
         )
         conn.commit()
 
@@ -267,6 +260,7 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=buyer_id,
                 text=f"Seller rejected deal {deal_id}"
             )
+
     await update_tracker(context, deal_id)
 
 async def update_tracker(context, deal_id):
@@ -285,11 +279,54 @@ async def update_tracker(context, deal_id):
     message_id = deal[6]
 
     stages = {
-        "pending": ["✔ Deal Created","⬜ Seller Accepted","⬜ Payment Sent","⬜ Item Delivered","⬜ Completed"],
-        "accepted": ["✔ Deal Created","✔ Seller Accepted","⬜ Payment Sent","⬜ Item Delivered","⬜ Completed"],
-        "paid": ["✔ Deal Created","✔ Seller Accepted","✔ Payment Sent","⬜ Item Delivered","⬜ Completed"],
-        "delivered": ["✔ Deal Created","✔ Seller Accepted","✔ Payment Sent","✔ Item Delivered","⬜ Completed"],
-        "completed": ["✔ Deal Created","✔ Seller Accepted","✔ Payment Sent","✔ Item Delivered","✔ Completed"]
+
+        "pending": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ],
+
+        "accepted": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ],
+
+        "paid": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ],
+
+        "delivered": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ],
+
+        "buyer confirmed": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ],
+
+        "completed": [
+            "✔ Deal Created",
+            "✔ Seller Accepted",
+            "✔ Payment Sent",
+            "✔ Item Delivered",
+            "✔ Completed"
+        ]
     }
 
     stage_text = "\n".join(stages.get(status, []))
@@ -432,21 +469,24 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cursor.execute(
         "UPDATE deals SET status=? WHERE deal_id=?",
-        ("buyer confirmed": [
-        "✔ Deal Created",
-        "✔ Seller Accepted",
-        "✔ Payment Sent",
-        "✔ Item Delivered",
-        "⬜ Completed"
-                ],
-         )
+        ("buyer confirmed", deal_id)
     )
+
     conn.commit()
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
-        text=f"Buyer confirmed delivery\nDeal ID: {deal_id}"
+        text=f"""
+Buyer confirmed delivery
+
+Deal ID: {deal_id}
+
+Admin can release payment:
+/release {deal_id}
+"""
     )
+
+    await update_tracker(context, deal_id)
 
 
 async def release(update: Update, context: ContextTypes.DEFAULT_TYPE):
