@@ -189,7 +189,7 @@ Amount: {amount}
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     # Send group invite to buyer and seller
-    invite_link = "https://t.me/safe_escrow_deals/1"
+    invite_link = "https://t.me/safe_escrow_deals"
 
     buyer_id = users.get(buyer)
 
@@ -734,27 +734,29 @@ app = ApplicationBuilder().token(TOKEN).build()
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("create",create)],
     states={
-        SELLER:[MessageHandler(filters.TEXT & ~filters.COMMAND,seller)],
-        ITEM:[MessageHandler(filters.TEXT & ~filters.COMMAND,item)],
-        AMOUNT:[MessageHandler(filters.TEXT & ~filters.COMMAND,amount)]
+        SELLER: [MessageHandler(filters.TEXT & (~filters.COMMAND), seller)],
+        ITEM: [MessageHandler(filters.TEXT & (~filters.COMMAND), item)],
+        AMOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), amount)]
     },
     fallbacks=[]
 )
 
-app.add_handler(CommandHandler("start",start))
+app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(role_handler, pattern="role_"))
-app.add_handler(CommandHandler("groupid", groupid))
+
 app.add_handler(conv_handler)
+
+app.add_handler(CommandHandler("groupid", groupid))
 app.add_handler(CallbackQueryHandler(seller_response))
 app.add_handler(CallbackQueryHandler(admin_payment, pattern="admin_"))
-app.add_handler(MessageHandler(filters.PHOTO,payment))
-app.add_handler(CommandHandler("delivered",delivered))
-app.add_handler(CommandHandler("confirm",confirm))
-app.add_handler(CommandHandler("release",release))
+app.add_handler(MessageHandler(filters.PHOTO, payment))
+app.add_handler(CommandHandler("delivered", delivered))
+app.add_handler(CommandHandler("confirm", confirm))
+app.add_handler(CommandHandler("release", release))
 app.add_handler(CommandHandler("paid", paid))
-app.add_handler(CommandHandler("mydeals",mydeals))
-app.add_handler(CommandHandler("status",status))
-app.add_handler(CommandHandler("adminpanel",adminpanel))
+app.add_handler(CommandHandler("mydeals", mydeals))
+app.add_handler(CommandHandler("status", status))
+app.add_handler(CommandHandler("adminpanel", adminpanel))
 
 print("Escrow Bot Running...")
 
