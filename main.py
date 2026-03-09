@@ -58,7 +58,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = user.username
 
     if username:
-        users[username] = user.id
+        users[username.lower()] = user.id
 
     keyboard = [
         [
@@ -175,7 +175,7 @@ Waiting for seller approval
         ]
     ]
 
-    seller_id = users.get(seller)
+    seller_id = users.get(seller.lower())
 
     if seller_id:
         await context.bot.send_message(
@@ -260,6 +260,9 @@ async def seller_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
         deal = cursor.fetchone()
+        if query.from_user.username != deal[2]:
+            await query.answer("Only the seller can perform this action.", show_alert=True)
+            return
 
         buyer_username = deal[1]
         buyer_id = users.get(buyer_username)
@@ -391,6 +394,15 @@ After delivery use:
 
         await query.edit_message_text("Payment Rejected")
 
+        cursor.execute(
+            "UPDATE deals SET status=? WHERE deal_id=?",
+            ("payment rejected", deal_id)
+        )
+        conn.commit()
+
+    await update_tracker(context, deal_id)
+
+
 async def update_tracker(context, deal_id):
 
     cursor.execute("SELECT * FROM deals WHERE deal_id=?", (deal_id,))
@@ -506,7 +518,7 @@ async def payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "Payment proof received. Admin will verify."
+        "Payment proof received. Admin(@Hrishabh2200032748) will verify."
     )
 
     keyboard = [
@@ -516,9 +528,15 @@ async def payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
+    await context.bot.forward_message(
+        chat_id=ADMIN_ID,
+        from_chat_id=update.message.chat_id,
+        message_id=update.message.message_id
+    )
+
     await context.bot.send_message(
         chat_id=ADMIN_ID,
-        text=f"Payment proof received\nDeal ID: {deal_id}",
+        text=f"Deal ID: {deal_id}",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -782,7 +800,7 @@ app.add_handler(CallbackQueryHandler(role_handler, pattern="role_"))
 app.add_handler(conv_handler)
 
 app.add_handler(CommandHandler("groupid", groupid))
-app.add_handler(CallbackQueryHandler(seller_response))
+app.add_handler(CallbackQueryHandler(seller_response, pattern="^(accept|reject|cancel)_"))
 app.add_handler(CallbackQueryHandler(admin_payment, pattern="admin_"))
 app.add_handler(MessageHandler(filters.PHOTO, payment))
 app.add_handler(CommandHandler("delivered", delivered))
