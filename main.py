@@ -2,6 +2,8 @@ import random
 import os
 import sqlite3
 from dotenv import load_dotenv
+from flask import Flask, send_file
+import threading
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -968,6 +970,18 @@ app.add_handler(CommandHandler("adminpanel", adminpanel))
 # app.add_handler(CommandHandler("confirm", confirm))
 # app.add_handler(CommandHandler("release", release))
 
+web = Flask(__name__)
+
+@web.route("/")
+def home():
+    return send_file("index.html")
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    web.run(host="0.0.0.0", port=port)
+
 print("Escrow Bot Running...")
+
+threading.Thread(target=run_web).start()
 
 app.run_polling()
