@@ -8,71 +8,63 @@
 <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.3/dist/dotlottie-wc.js" type="module"></script>
 
 <style>
-    body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
-        background: white;
-        color: #111;
-        text-align: center;
-        padding: 20px;
-    }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: white;
+    color: #111;
 
-    .container {
-        max-width: 500px;
-        width: 100%;
-    }
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;   /* FIX: start from top */
+    min-height: 100vh;
+    padding: 40px 20px;
+}
 
-    h2 {
-        margin-top: 10px;
-    }
+.container {
+    max-width: 500px;
+    width: 100%;
+    text-align: center;
+}
 
-    a.button {
-        display: inline-block;
-        margin: 15px 0;
-        padding: 12px 20px;
-        background: #0088cc;
-        color: white;
-        text-decoration: none;
-        border-radius: 8px;
-        font-weight: bold;
-    }
+/* Button */
+.button {
+    display: inline-block;
+    margin: 15px 0;
+    padding: 12px 20px;
+    background: #0088cc;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: bold;
+}
 
-    a.button:hover {
-        background: #006fa3;
-    }
+/* Instructions */
+.instructions {
+    text-align: left;
+    font-size: 14px;
+    line-height: 1.6;
+}
 
-    .instructions {
-        text-align: left;
-        margin-top: 20px;
-        font-size: 14px;
-        line-height: 1.6;
-    }
+/* Red Note */
+.note {
+    color: red;
+    font-weight: bold;
+}
 
-    @media (max-width: 600px) {
-        dotlottie-wc {
-            width: 200px !important;
-            height: 200px !important;
-        }
-    }
+/* Animation */
+.animation {
+    margin-top: 30px;
+    display: flex;
+    justify-content: center;   /* center animation horizontally */
+}
 </style>
+
 </head>
 
 <body>
 
 <div class="container">
-
-    <dotlottie-wc
-    src="https://lottie.host/ebd162be-722f-402d-920b-8d014e839dc6/PDsy0s5PnC.lottie"
-    style="width:300px;height:300px"
-    autoplay
-    loop>
-    </dotlottie-wc>
-
-    <h2> Bot is Live</h2>
 
     <a href="https://t.me/Blaze567bot" target="_blank" class="button">
         👉 Click here to access the Telegram Bot
@@ -83,20 +75,30 @@
 
         <p><strong>Step 1:</strong> Click the button above and open the bot.</p>
 
-        <p><strong>Step 2:</strong> Type <code>/start</code></p>
+        <p><strong>Step 2:</strong> Click <strong>Start</strong> or type <code>/start</code></p>
 
         <p><strong>Step 3:</strong> Choose <strong>Buyer</strong> if you are the buyer.</p>
 
         <p><strong>Step 4:</strong> Enter the <strong>seller's Telegram username</strong>.</p>
 
-        <p><strong>Note:</strong> The seller must also start the bot using <code>/start</code> and stay online.</p>
+        <p class="note">Note: The seller MUST also start the bot using /start and stay online.</p>
 
         <p><strong>Step 5:</strong> Once both users are active, the seller will receive a <strong>Deal ID</strong>.</p>
 
         <p><strong>Step 6:</strong> Seller can <strong>Accept</strong> or <strong>Reject</strong> the deal.</p>
 
         <p><strong>Important:</strong> Both buyer and seller must be active in the bot for the process to work properly.</p>
+    </div>
 
+    <h2> Bot is Live</h2>
+
+    <div class="animation">
+        <dotlottie-wc
+        src="https://lottie.host/ebd162be-722f-402d-920b-8d014e839dc6/PDsy0s5PnC.lottie"
+        style="width:250px;height:250px"
+        autoplay
+        loop>
+        </dotlottie-wc>
     </div>
 
 </div>
